@@ -1,0 +1,114 @@
+---
+title: "Longitudinal Weather Severity"
+author: "Adam Ficke"
+date: "2/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(data.table)
+library(R.utils)
+library(lubridate)
+library(gridExtra)
+```
+
+## Synopsis 
+
+This report aims to outline the historical impacts of different categories of severe weather events to inform disaster preparedness efforts. The scope includes assessing the morbidity and mortality effects of severe weather events, as well as the economic impacts. 
+
+
+## Data Processing 
+
+The data spans the years 1950 to 2011, and is sourced from the National Weather Service Storm Data Documentation database. 
+
+```{r data processing, echo=TRUE,cache=TRUE}
+
+df <-
+        fread("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2")
+
+```
+
+## Results
+
+The data show that historically, tornadoes have been the largest contributor of both injuries and deaths, as well as economin impact.   
+
+
+```{r results}
+#summarize for total health outcomes by EVTYPE 
+df <- as.data.frame(df)
+health_summary <- df %>%
+        mutate(HEALTH = INJURIES + FATALITIES) %>%
+        group_by(EVTYPE) %>%
+        summarise(Injuries_Fatalities = sum(HEALTH)) %>%
+        arrange(desc(Injuries_Fatalities))
+
+#plot the response
+health_plot <- health_summary %>%
+        top_n(10) %>%
+        ggplot(aes(x=reorder(EVTYPE,-Injuries_Fatalities),y=Injuries_Fatalities)) + 
+        geom_col() +
+        ggtitle("Health Impacts by Event Type") + 
+        theme(plot.title = element_text(hjust=0.5)) + 
+        theme(axis.text.x = element_text(angle = 25, hjust = 1, vjust = 1)) + 
+        theme(axis.title.x = element_blank())
+
+#summarize for total damage outcomes by EVTYPE 
+damange_summary <- df %>%
+        mutate(DAMAGE = PROPDMG + CROPDMG) %>%
+        group_by(EVTYPE) %>%
+        summarise(DAMAGE = sum(DAMAGE)) %>%
+        arrange(desc(DAMAGE))
+
+damage_plot <- damange_summary %>%
+        top_n(10) %>%
+        ggplot(aes(x=reorder(EVTYPE,-DAMAGE),y=DAMAGE)) + 
+        geom_col() + 
+        theme(axis.text.x = element_text(angle = 25, hjust = 1, vjust = 1)) +
+        ggtitle("Property Damage Impacts by Event Type") + 
+        theme(plot.title = element_text(hjust=0.5)) + 
+        theme(axis.title.x = element_blank())
+         
+grid.arrange(health_plot,damage_plot)
+```
+
+### Verification of Results Over Time
+
+These results reflect data from 1950 through 2011, so the following shows the incidence of each event type over time, as well as the health impacts for each category by year. 
+
+While certain event types (notably Wind Thunderstorms) have been recorded much more frequently in recent years, tornados have consistantly been the number one cause of both health and economic impacts. 
+
+```{r longitudinal}
+
+#show the number of events by year for the top 5 deadliest events
+TOP_5 <- df %>%
+        group_by(EVTYPE) %>%
+        summarise(Injuries_Fatalities = sum(c(INJURIES,FATALITIES))) %>%
+        arrange(desc(Injuries_Fatalities)) %>% 
+        top_n(5)
+
+#now show the number of events for each over time for the top 5 
+incidence_time <- df %>% 
+        mutate(year = year(mdy_hms(BGN_DATE))) %>% 
+        group_by(year,EVTYPE) %>%
+        filter(EVTYPE %in% TOP_5[[1]]) %>%
+        count() %>% 
+        ggplot(aes(x = year, y=n, group = EVTYPE, color=EVTYPE)) + 
+        geom_line() + 
+        ggtitle("Incidence of Dedliest Weather Events by Year")
+
+#health events over time for top 5
+health_time <- df %>% 
+        mutate(year = year(mdy_hms(BGN_DATE))) %>% 
+        group_by(year,EVTYPE) %>%
+        filter(EVTYPE %in% TOP_5[[1]]) %>%
+        summarise(Injuries_Deaths = sum(c(FATALITIES,INJURIES))) %>% 
+        ggplot(aes(x = year, y=Injuries_Deaths, group = EVTYPE, color=EVTYPE)) + 
+        geom_line() + 
+        ggtitle("Injuries and Deaths of Dedliest Weather Events by Year")
+
+grid.arrange(incidence_time,health_time)
+```
+
